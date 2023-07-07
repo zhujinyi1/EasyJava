@@ -16,7 +16,7 @@
     <lang3.version>3.4</lang3.version>
     <logback.version>1.2.10</logback.version>
     <slf-4j.version>1.7.7</slf-4j.version>
-    <fastjson.version>1.2.66</fastjson.version>
+    <fastjson.version>1.2.45</fastjson.version>
   </properties>
 
   <dependencies>

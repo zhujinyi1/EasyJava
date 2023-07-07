@@ -14,7 +14,9 @@ import org.slf4j.LoggerFactory;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class BuildTable {
     private static Connection connection=null;
@@ -39,7 +41,7 @@ public class BuildTable {
     /**
      * 获取数据库中所有表的信息
      */
-    public static void getTables(){
+    public static List<TableInfo> getTables(){
         PreparedStatement ps = null;
         ResultSet rs = null;
         List<TableInfo> tableInfos = new ArrayList<>();
@@ -49,7 +51,6 @@ public class BuildTable {
             while(rs.next()){
                 String tablename = rs.getString("name");
                 String comment = rs.getString("comment");
-//                System.out.println("tablename:"+tablename+",comment:"+comment);
 
                 TableInfo tableInfo = new TableInfo();
                 String beanName = tablename;
@@ -60,16 +61,14 @@ public class BuildTable {
                 }
                 beanName = processField(beanName,true);
                 tableInfo.setBeanName(beanName);
-                tableInfo.setBeanParamName(beanName+Constants.SUFFIX_BEAN_PARAM);
+                tableInfo.setBeanParamName(beanName+Constants.SUFFIX_BEAN_QUERY);
 
-                List<FieldInfo> fieldInfoList = readFieldInfo(tableInfo);
-                tableInfo.setFieldInfoList(fieldInfoList);
-
-                System.out.println(JSONObject.toJSONString(tableInfo));
-                System.out.println(JSONObject.toJSONString(fieldInfoList));
-
+                readFieldInfo(tableInfo);
+                getKeyIndexof(tableInfo);
+                tableInfos.add(tableInfo);
             }
         }catch (Exception e){
+            e.printStackTrace();
             if(rs!=null){
                 try {
                     rs.close();
@@ -92,6 +91,7 @@ public class BuildTable {
                 }
             }
         }
+        return tableInfos;
     }
 
     /**
@@ -99,13 +99,17 @@ public class BuildTable {
      * @param tableInfo 表信息
      * @return 字段信息数组
      */
-    private static List<FieldInfo> readFieldInfo(TableInfo tableInfo){
+    private static void readFieldInfo(TableInfo tableInfo){
         PreparedStatement ps = null;
         ResultSet rs = null;
         List<FieldInfo> fieldInfos = new ArrayList<>();
         try{
             ps = connection.prepareStatement(String.format(SQL_SHOW_TABLE_FIELDS,tableInfo.getTableName()));
             rs = ps.executeQuery();
+
+            boolean haveDate = false;
+            boolean haveBigDecimal = false;
+
             while(rs.next()){
                 FieldInfo fieldInfo = new FieldInfo();
                 String field = rs.getString("field");
@@ -125,32 +129,56 @@ public class BuildTable {
                 fieldInfo.setJavaType(javaType);
                 //                System.out.println(field+type+extra+comment);
 
-                if(ArrayUtils.contains(Constants.SQL_DATE_TYPES,type)){
-                    tableInfo.setHaveDate(true);
-                }
-                else{
-                    tableInfo.setHaveDate(false);
+                if(ArrayUtils.contains(Constants.SQL_DATE_TYPES,type) || ArrayUtils.contains(Constants.SQL_DATE_TIME_TYPES,type)){
+                    haveDate = true;
                 }
                 if(ArrayUtils.contains(Constants.SQL_DECIMAL_TYPE,type)){
-                    tableInfo.setHaveBigDecimal(true);
+                    haveBigDecimal = true;
                 }
-                else{
-                    tableInfo.setHaveBigDecimal(false);
-                }
-                if(ArrayUtils.contains(Constants.SQL_DATE_TIME_TYPES,type)){
-                    tableInfo.setHaveDateTime(true);
-                }
-                else{
-                    tableInfo.setHaveDateTime(false);
-                }
+                tableInfo.setFieldInfoList(fieldInfos);
 
 //                System.out.println(type + ":" + javaType);
                 fieldInfos.add(fieldInfo);
-
-
             }
-        }catch (Exception e){
+
+            tableInfo.setHaveBigDecimal(haveBigDecimal);
+            tableInfo.setHaveDate(haveDate);
+            tableInfo.setHaveDateTime(haveDate);
+
+            List<FieldInfo> extendList = new ArrayList<>();
+            for (FieldInfo fieldInfo : tableInfo.getFieldInfoList()) {
+//                String类型参数,
+                if(ArrayUtils.contains(Constants.SQL_STRING_TYPE,fieldInfo.getSqlType())){
+                    FieldInfo field = new FieldInfo();
+                    field.setJavaType(fieldInfo.getJavaType());
+                    field.setPropertyName(fieldInfo.getPropertyName()+Constants.SUFFIX_BEAN_QUERY_FUZZY);
+                    field.setFieldName(fieldInfo.getFieldName());
+                    field.setSqlType(fieldInfo.getSqlType());
+                    extendList.add(field);
+
+                }
+//                日期
+                if(ArrayUtils.contains(Constants.SQL_DATE_TIME_TYPES,fieldInfo.getSqlType())||ArrayUtils.contains(Constants.SQL_DATE_TYPES,fieldInfo.getSqlType())){
+                    FieldInfo field = new FieldInfo();
+                    field.setJavaType("String");
+                    field.setPropertyName(fieldInfo.getPropertyName()+Constants.SUFFIX_BEAN_QUERY_TIME_START);
+                    field.setFieldName(fieldInfo.getFieldName());
+                    field.setSqlType(fieldInfo.getSqlType());
+                    extendList.add(field);
+                    field = new FieldInfo();
+                    field.setJavaType("String");
+                    field.setPropertyName(fieldInfo.getPropertyName()+Constants.SUFFIX_BEAN_QUERY_TIME_END);
+                    field.setFieldName(fieldInfo.getFieldName());
+                    field.setSqlType(fieldInfo.getSqlType());
+                    extendList.add(field);
+                }
+            }
+            tableInfo.setExtendFieldInfoList(extendList);
+
+        }catch (Exception e) {
             e.printStackTrace();
+        }
+        finally {
             if(rs!=null){
                 try {
                     rs.close();
@@ -166,7 +194,7 @@ public class BuildTable {
                 }
             }
         }
-        return fieldInfos;
+        tableInfo.setFieldInfoList(fieldInfos);
     }
 
     /**
@@ -174,39 +202,45 @@ public class BuildTable {
      * @param tableInfo 表信息
      * @return
      */
-    private static List<FieldInfo> getKeyIndexof(TableInfo tableInfo){
+    private static void getKeyIndexof(TableInfo tableInfo){
         PreparedStatement ps = null;
         ResultSet rs = null;
         List<FieldInfo> fieldInfos = new ArrayList<>();
         try{
+
+            Map<String,FieldInfo> tempMap = new HashMap<>();
+            for(FieldInfo fieldInfo:tableInfo.getFieldInfoList()){
+               tempMap.put(fieldInfo.getFieldName(),fieldInfo);
+            }
+
             ps = connection.prepareStatement(String.format(SQL_SHOW_TABLE_INDEX,tableInfo.getTableName()));
             rs = ps.executeQuery();
             while(rs.next()){
                 FieldInfo fieldInfo = new FieldInfo();
                 String keyName = rs.getString("key_name");
                 int nonUnique = rs.getInt("non_unique");
-                String colunmName = rs.getString("colunm_name");
+                String colunmName = rs.getString("column_name");
                 if(nonUnique==1){
                     continue;
                 }
                 List<FieldInfo> keyFieldList = tableInfo.getKeyIndexMap().get(keyName);
                 if(null == keyFieldList){
                     keyFieldList = new ArrayList<>();
-
-                    for (FieldInfo info : tableInfo.getFieldInfoList()) {
-                        if(info.getFieldName().equals(colunmName)){
-                            keyFieldList.add(info);
-                        }
-                    }
-
                     tableInfo.getKeyIndexMap().put(keyName,keyFieldList);
                 }
+//                for (FieldInfo info : tableInfo.getFieldInfoList()) {
+//                    if(info.getFieldName().equals(colunmName)){
+//                        keyFieldList.add(info);
+//                    }
+//                }
+                keyFieldList.add(tempMap.get(colunmName));
 
 //                System.out.println(type + ":" + javaType);
-                fieldInfos.add(fieldInfo);
             }
-        }catch (Exception e){
+        }catch (Exception e) {
             e.printStackTrace();
+        }
+        finally {
             if(rs!=null){
                 try {
                     rs.close();
@@ -222,7 +256,6 @@ public class BuildTable {
                 }
             }
         }
-        return fieldInfos;
     }
 
     /**

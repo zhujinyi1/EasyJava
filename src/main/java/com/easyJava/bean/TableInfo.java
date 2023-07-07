@@ -1,5 +1,7 @@
 package com.easyJava.bean;
 
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -14,14 +16,26 @@ public class TableInfo {
     private String comment;
 //    字段信息
     private List<FieldInfo> fieldInfoList;
+
+    public List<FieldInfo> getExtendFieldInfoList() {
+        return extendFieldInfoList;
+    }
+
+    public void setExtendFieldInfoList(List<FieldInfo> extendFieldInfoList) {
+        this.extendFieldInfoList = extendFieldInfoList;
+    }
+
+    //    扩展字段信息
+    private List<FieldInfo> extendFieldInfoList;
 //    唯一索引集合
-    private Map<String,List<FieldInfo>> keyIndexMap;
+    private Map<String,List<FieldInfo>> keyIndexMap = new LinkedHashMap<>();
 //    是否有date类型
     private boolean haveDate;
 //    是否有datetime类型
     private boolean haveDateTime;
 //    是否有bigDecimal类型
     private boolean haveBigDecimal;
+
 
     public String getTableName() {
         return tableName;

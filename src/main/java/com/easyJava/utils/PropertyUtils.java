@@ -1,6 +1,7 @@
 package com.easyJava.utils;
 
 import java.io.InputStream;
+import java.io.InputStreamReader;
 import java.util.Iterator;
 import java.util.Map;
 import java.util.Objects;
@@ -15,7 +16,7 @@ public class PropertyUtils {
         InputStream is = null;
         try {
             is = PropertyUtils.class.getClassLoader().getResourceAsStream("application.properties");
-            prop.load(is);
+            prop.load(new InputStreamReader(is,"utf-8"));
             Iterator<Object> io = prop.keySet().iterator();
             while (io.hasNext()){
                 String key = (String) io.next();
